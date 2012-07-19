@@ -1,3 +1,5 @@
+#!/usr/local/bin/node
+
 var port = 1110;
 var folder = './data/';
 
@@ -6,6 +8,10 @@ var net = require('net');
 var Long = require('./long');
 var fs = require('fs');
 var path = require('path');
+
+// set it to false to do network benchmark, 
+// pass 'nosave' command line arg to set it false
+var saveReceivedFilesToDisk = true;
 
 log.setGlobalLevel(log.INFO);
 
@@ -60,12 +66,6 @@ var server = net.createServer(function(socket) {
 
   var remoteAddress = '<NO REMOTE ADDR>';
 
-  socket.on('connect', function() {
-    remoteAddress = socket.remoteAddress + ':' + socket.remotePort;
-    console.log(remoteAddress + ' connected.');
-    log.debug(remoteAddress + ' connected.');
-  });
-
   var fileName = {
     desc: 'file name',
     received: false,
@@ -89,8 +89,12 @@ var server = net.createServer(function(socket) {
     chunk: null
   };
 
+  socket.on('connect', function() {
+    remoteAddress = socket.remoteAddress + ':' + socket.remotePort;
+    log.debug(remoteAddress + ' connected.');
+  });
+
   socket.on('data', function(chunk) {
-    console.log("received chunk " + chunk.length + " bytes");
     log.debug("received chunk " + chunk.length + " bytes");
 
     global.bytesLeft = chunk.length;
@@ -100,7 +104,9 @@ var server = net.createServer(function(socket) {
     receive(fileName, global, function() {
       fileName.value = fileName.buffer.toString('ascii').replace(/\000/g, ''); // replace the ending 'zero' char
       log.info(remoteAddress + ' file name received as ' + fileName.value);
-      fileWriteStream = fs.createWriteStream(path.join(folder, fileName.value), { flags: 'w+' });
+      if (saveReceivedFilesToDisk) {
+        fileWriteStream = fs.createWriteStream(path.join(folder, fileName.value), { flags: 'w+' });        
+      }
     });
 
     if (global.bytesLeft == 0) {
@@ -122,7 +128,9 @@ var server = net.createServer(function(socket) {
     // receive file data
     log.debug("received data " + global.chunk.length + " bytes");
     fileWriteSize = fileWriteSize.add(Long.Long(global.chunk.length, 0));
-    fileWriteStream.write(global.chunk);
+    if (fileWriteStream) {
+      fileWriteStream.write(global.chunk);    
+    }
     if (fileWriteSize.equals(fileLength.value)) {
       socket.write("ok");
       log.debug(remoteAddress + ' wrote ok');
@@ -152,8 +160,14 @@ if (!fs.existsSync(folder)) {
   process.exit(1);
 }
 
-server.listen(port);
+if (process.argv.length > 2) {
+  if (process.argv[2] === 'nosave') {
+    saveReceivedFilesToDisk = false;
+    log.info("won't save received files to disk.");
+  }
+}
 
+server.listen(port);
 log.info("server running at port " + port);
 
 process.on('uncaughtException', function (err) {

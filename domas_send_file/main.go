@@ -71,13 +71,7 @@ func send(id int, address string) int64 {
 	return fileSize + int64(268)
 }
 
-type Performance struct {
-	totalSize int64
-	duration int64
-}
-
-func send_files(id int, times int, address string, ch chan<- Performance) {
-	startTime := time.Now()
+func send_files(id int, times int, address string, ch chan<- int64) {
 	var totalSize int64
 
 	for i := 0; i < times; i++ {
@@ -85,8 +79,7 @@ func send_files(id int, times int, address string, ch chan<- Performance) {
 		totalSize += send(id * 10000 + i, address)		
 	}	
 
-	duration := time.Now().Sub(startTime).Nanoseconds() / 1000000
-	ch <- Performance { totalSize, duration }	
+	ch <- totalSize
 }
 
 func main() {
@@ -109,20 +102,21 @@ func main() {
 
 	fmt.Printf("running %v threads\n", threads)
 	fmt.Printf("repeating %v times\n", times)
-	ch := make(chan Performance)
+
+	ch := make(chan int64)
+	startTime := time.Now()
+
 	for i := 0; i < threads; i++ {
 		go send_files(i + 1, times, address, ch)
 	}
 
 	totalSize := int64(0)
-	duration := int64(0)
+
 	for i := 0; i < threads; i++ {
-		p := <- ch
-		totalSize += p.totalSize
-		if (p.duration > duration) {
-			duration = p.duration
-		}
+		size := <- ch
+		totalSize += size
 	}
+	duration := time.Now().Sub(startTime).Nanoseconds() / 1000000
 
 	fmt.Printf("total size %v, duration %v ms, performance %v\n", totalSize, duration, totalSize / duration)
 
